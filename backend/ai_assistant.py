@@ -31,7 +31,7 @@ class AIAssistant:
         """Получение рекомендаций от ИИ"""
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4.1-nano",
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": user_input}
