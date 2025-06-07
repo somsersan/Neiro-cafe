@@ -3,6 +3,7 @@ import requests
 import uuid
 import time
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -14,6 +15,18 @@ class AIAssistant:
         self.token_url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
         self.api_url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
         
+        # Ключи для Yandex GPT
+        self.yandex_oauth_token = os.getenv("YANDEX_OAUTH_TOKEN")
+        self.yandex_iam_url = "https://iam.api.cloud.yandex.net/iam/v1/tokens"
+        self.yandex_gpt_url = "https://llm.api.cloud.yandex.net/llm/v1alpha/chat"
+        self.yandex_folder_id = os.getenv("YANDEX_FOLDER_ID")
+
+         # Токены и их время жизни
+        self.gigachat_token = None
+        self.gigachat_token_expires = None
+        self.yandex_iam_token = None
+        self.yandex_iam_token_expires = None
+
         # Системный промпт
         self.system_prompt = """
         Ты ИИ-ассистент в ресторане "Ikanam-cafe", помогающий гостям выбрать блюда.
@@ -80,12 +93,15 @@ class AIAssistant:
                 'Authorization': f'Basic {self.auth_key}'
             }
             
+            print("DEBUG: Получаю токен GigaChat...")
             response = requests.post(
                 self.token_url,
                 headers=headers,
                 data=payload,
                 verify=False
             )
+            
+            print("DEBUG: Ответ от сервера:", response.status_code, response.text)
             
             if response.status_code == 200:
                 token_data = response.json()
@@ -147,6 +163,89 @@ class AIAssistant:
                 "reply": f"Извините, произошла ошибка: {str(e)}",
                 "dishes": []
             }
+        
+    def get_yandex_iam_token(self) -> str:
+        """Получение и обновление IAM-токена для Yandex Cloud"""
+        if self.yandex_iam_token and datetime.now() < self.yandex_iam_token_expires - timedelta(minutes=5):
+            return self.yandex_iam_token
+        
+        try:
+            payload = {
+                "yandexPassportOauthToken": self.yandex_oauth_token
+            }
+            headers = {
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(
+                self.yandex_iam_url,
+                headers=headers,
+                json=payload
+            )
+            response.raise_for_status()
+            
+            token_data = response.json()
+            self.yandex_iam_token = token_data["iamToken"]
+            # IAM-токен обычно действителен 12 часов
+            self.yandex_iam_token_expires = datetime.now() + timedelta(seconds=token_data.get("expiresIn", 3600))
+            
+            return self.yandex_iam_token
+            
+        except Exception as e:
+            raise Exception(f"Ошибка получения IAM-токена: {str(e)}")
+
+    def get_yandexgpt_recommendations(self, user_input: str) -> dict:
+        """Получение рекомендаций от Yandex GPT (новый endpoint)"""
+        try:
+            # Получение IAM-токена
+            iam_token = self.get_yandex_iam_token()
+            yandex_gpt_url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+            headers = {
+                "Authorization": f"Bearer {iam_token}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "modelUri": f"gpt://{self.yandex_folder_id}/yandexgpt/latest",
+                "completionOptions": {
+                    "stream": False,
+                    "temperature": 0.7,
+                    "maxTokens": 500
+                },
+                "messages": [
+                    {"role": "system", "text": self.system_prompt},
+                    {"role": "user", "text": user_input}
+                ]
+            }
+            response = requests.post(
+                yandex_gpt_url,
+                headers=headers,
+                json=payload
+            )
+            if response.status_code != 200:
+                return {
+                    "reply": f"Ошибка API: {response.status_code} - {response.text}",
+                    "dishes": []
+                }
+            data = response.json()
+            ai_response = data["result"]["alternatives"][0]["message"]["text"].strip()
+            return {
+                "reply": ai_response,
+                "dishes": self.parse_dishes_from_response(ai_response)
+            }
+        except Exception as e:
+            return {
+                "reply": f"Yandex GPT error: {str(e)}",
+                "dishes": []
+            }
+
+    def get_dual_responses(self, user_input: str) -> dict:
+        """Получить ответы сразу от GigaChat и YandexGPT"""
+        gigachat = self.get_recommendations(user_input)
+        yandexgpt = self.get_yandexgpt_recommendations(user_input)
+        return {
+            "gigachat": gigachat,
+            "yandexgpt": yandexgpt
+        }
     
     def parse_dishes_from_response(self, response: str) -> list:
         """Парсинг блюд из ответа ИИ"""

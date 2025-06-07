@@ -10,13 +10,35 @@
 <body>
     <header>
         <h1>Ikanam-cafe</h1>
+        <!-- Кнопка для показа победителя -->
+        <button id="show-winner-btn">Показать победителя</button>
     </header>
+    
+    <!-- Модальное окно победителя -->
+    <div id="winner-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="winner-title">Победитель</h2>
+            <div id="winner-model"></div>
+            <div id="winner-stats"></div>
+        </div>
+    </div>
     <main>
         <div class="chat-container">
             <div id="messages"></div>
             <div class="input-area">
                 <input type="text" id="user-input" placeholder="Привет, я хочу покушать...">
                 <button id="send-button">Отправить</button>
+            </div>
+            <div class="responses-container">
+                <div class="response-option" id="response-1">
+                    <div class="response-text"></div>
+                     <button class="vote-button">Выбрать этот вариант</button>
+                </div>
+                <div class="response-option" id="response-2">
+                    <div class="response-text"></div>
+                    <button class="vote-button">Выбрать этот вариант</button>
+                </div>
             </div>
         </div>
 
